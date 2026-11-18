@@ -1,0 +1,1 @@
+"""Othello rules and players."""
