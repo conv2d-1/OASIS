@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1018" />
+    <title>OASIS · Othello Arena</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="setup-overlay hidden" id="setupOverlay" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+        <div class="setup-card">
+          <div class="setup-heading">
+            <div><span class="section-kicker">MATCH SETUP</span><h2 id="setupTitle">配置双方模型</h2><p>选择黑方和白方，确认后开始一局新的实验。</p></div>
+            <span class="setup-step">01 / 01</span>
+          </div>
+          <div class="setup-grid">
+            <section class="setup-side black-setup">
+              <div class="setup-side-heading"><span class="stone black-stone"></span><div><b>黑方</b><small>先手 · Player 1</small></div></div>
+              <label class="setup-select-label">模型类型<select id="blackModelSetup"><option value="human" selected>真人</option><option value="mcts">MCTS</option><option value="alphabeta">Alpha-Beta</option><option value="random">随机</option><option value="greedy">贪心</option><option value="alphazero">AlphaZero</option><option value="rgsc">RGSC</option></select></label>
+              <div class="setup-config" id="blackConfig"></div>
+            </section>
+            <section class="setup-side white-setup">
+              <div class="setup-side-heading"><span class="stone white-stone"></span><div><b>白方</b><small>后手 · Player 2</small></div></div>
+              <label class="setup-select-label">模型类型<select id="whiteModelSetup"><option value="human">真人</option><option value="mcts">MCTS</option><option value="alphabeta">Alpha-Beta</option><option value="random">随机</option><option value="greedy">贪心</option><option value="alphazero" selected>AlphaZero</option><option value="rgsc">RGSC</option></select></label>
+              <div class="setup-config" id="whiteConfig"></div>
+            </section>
+          </div>
+          <div class="setup-footer"><p><span class="note-icon">i</span> MCTS 与 Alpha-Beta 使用搜索参数，AlphaZero 与 RGSC 使用 checkpoint 和 MCTS 配置。当前页面仍是本地演示模式。</p><button class="primary-button" id="confirmSetup" type="button"><span>确定配置</span><span>↗</span></button></div>
+        </div>
+      </div>
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="OASIS 首页">
+          <span class="brand-mark">O</span>
+          <span>
+            <strong>OASIS</strong>
+            <small>Othello Arena for Search &amp; Interactive Self-play</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <span class="runtime-pill"><i></i> 本地演示模式</span>
+          <button class="icon-button" id="themeButton" type="button" aria-label="切换主题">◐</button>
+        </div>
+      </header>
+
+      <main id="top" class="page-grid">
+        <section class="hero-copy">
+          <div class="eyebrow">SEARCH LAB / 01</div>
+          <h1>让搜索过程<br /><em>变得可见。</em></h1>
+          <p>在同一块棋盘上观察策略、价值与搜索的交汇。配置双方模型，开始一局黑白棋实验。</p>
+          <div class="mode-switch" role="tablist" aria-label="对战模式">
+            <button class="mode-button active" data-mode="match" role="tab" aria-selected="true" type="button">当前对局</button>
+            <button class="mode-button" data-mode="replay" role="tab" aria-selected="false" type="button">对局记录</button>
+          </div>
+        </section>
+
+        <section class="workspace-card" aria-label="棋局工作区">
+          <div class="workspace-heading">
+            <div>
+              <span class="section-kicker">LIVE MATCH</span>
+              <h2 id="matchTitle">当前对局</h2>
+            </div>
+            <span class="match-id">LOCAL / 8×8</span>
+          </div>
+
+          <div class="match-layout">
+            <div class="board-column">
+              <div class="players-row">
+                <div class="player-chip active-player" id="blackPlayerChip">
+                  <span class="stone black-stone"></span>
+                  <span><b id="blackName">你</b><small>黑方 · <span id="blackCount">2</span></small></span>
+                </div>
+                <div class="turn-label" id="turnLabel">黑方回合</div>
+                <div class="player-chip" id="whitePlayerChip">
+                  <span class="stone white-stone"></span>
+                  <span><b id="whiteName">AlphaZero</b><small>白方 · <span id="whiteCount">2</span></small></span>
+                </div>
+              </div>
+
+              <div class="board-frame">
+                <div class="board-coordinate top-coordinates" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+                <div class="board-with-side">
+                  <div class="board-coordinate side-coordinates" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+                  <div class="board" id="board" role="grid" aria-label="黑白棋棋盘"></div>
+                </div>
+              </div>
+
+              <div class="board-footer">
+                <span><span class="legend-dot legal-dot"></span> 可落子</span>
+                <span id="moveCounter">第 1 手 · 4 个合法位置</span>
+                <span class="board-status" id="boardStatus">等待落子</span>
+              </div>
+            </div>
+
+            <aside class="control-column">
+              <div class="control-block">
+                <div class="control-label">已确认对局 <span class="muted">MATCH READY</span></div>
+                <div class="selected-models" id="selectedModelsSummary"></div>
+                <button class="secondary-button full-button" id="openSetupButton" type="button">对局配置</button>
+              </div>
+
+              <div class="action-row">
+                <button class="primary-button" id="startButton" type="button"><span>开始对局</span><span>↗</span></button>
+                <button class="secondary-button" id="pauseButton" type="button">暂停</button>
+              </div>
+              <div class="playback-row">
+                <label class="autoplay-toggle"><input id="autoPlayToggle" type="checkbox" checked /><span>自动播放</span><small>AI 间隔 2s</small></label>
+                <button class="step-button" id="stepButton" type="button" disabled>下一步</button>
+              </div>
+
+              <div class="experiment-note">
+                <span class="note-icon">i</span>
+                <p><b>接口状态</b><br />当前使用浏览器内置演示规则。FastAPI 对局服务完成后，可在此处切换真实模型。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel metric-panel">
+            <div class="panel-heading"><span class="section-kicker">POSITION</span><span class="live-dot">LIVE</span></div>
+            <div class="metrics"><div><strong id="emptyCount">60</strong><span>空位</span></div><div><strong id="leadMetric">0</strong><span>当前差值</span></div><div><strong id="turnMetric">01</strong><span>回合</span></div></div>
+            <div class="progress-track"><span id="progressBar"></span></div>
+            <div class="progress-caption"><span>棋局进度</span><span id="progressText">4 / 64</span></div>
+          </article>
+
+          <article class="panel log-panel">
+            <div class="panel-heading"><span class="section-kicker">EVENT STREAM</span><button class="text-button" id="clearLog" type="button">清空</button></div>
+            <div class="event-list" id="eventList" aria-live="polite"></div>
+          </article>
+
+          <article class="panel model-panel">
+            <div class="panel-heading"><span class="section-kicker">MODEL STATUS</span><span class="status-badge">3 loaded</span></div>
+            <div class="model-row"><span class="model-avatar orange">AZ</span><span><b>AlphaZero browser demo</b><small>local heuristic · no checkpoint</small></span><i class="todo-dot"></i></div>
+            <div class="model-row"><span class="model-avatar violet">RG</span><span><b>RGSC</b><small>training pipeline · TODO</small></span><i class="todo-dot"></i></div>
+            <div class="model-row"><span class="model-avatar gray">GR</span><span><b>Greedy baseline</b><small>heuristic · local</small></span><i class="ready-dot"></i></div>
+          </article>
+        </section>
+      </main>
+
+      <footer class="footer"><span>OASIS / Othello Arena for Search and Interactive Self-play</span><span>Research interface · v0.1</span></footer>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,1 +1,19 @@
-# TODO: Implement the frontend after the API contract is fixed.
+# OASIS 前端
+
+当前版本是一个无需构建工具的静态演示页面。
+
+## 本地运行
+
+在仓库根目录执行：
+
+~~~powershell
+python -m http.server 4173 --bind 127.0.0.1 --directory frontend
+~~~
+
+然后打开 `http://127.0.0.1:4173/`，并保持运行服务的终端窗口打开。
+
+也可以直接双击 `start.bat`，再打开同一个地址。
+
+如果页面仍无法打开，可以直接双击 `index.html` 作为本地演示页面。当前页面不依赖后端接口。
+
+当前页面在浏览器中运行黑白棋规则和演示 AI，方便先完成棋盘交互、模式切换和回放界面。棋盘采用增量 DOM 更新，落子和翻子只更新受影响的格子，翻子使用 3D 翻转动画。`api/` 完成后，将 `app.js` 中的本地控制器替换为对局服务请求。
