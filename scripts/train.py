@@ -3,11 +3,15 @@
 import argparse
 import logging
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
-from Coach import Coach
-from othello.OthelloGame import OthelloGame
-from othello.pytorch.NNet import NNetWrapper
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from training.coach import Coach
+from othello.game import OthelloGame
+from models.networks import NNetWrapper
 
 
 def main():
@@ -49,3 +53,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

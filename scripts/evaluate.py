@@ -2,36 +2,29 @@
 
 import argparse
 from pathlib import Path
-from types import SimpleNamespace
+import sys
 
-import numpy as np
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from Arena import Arena
-from MCTS import MCTS
-from othello.OthelloGame import OthelloGame
-from othello.OthelloPlayers import GreedyOthelloPlayer, HumanOthelloPlayer, RandomPlayer
+from agents.alphazero_agent import AlphaZeroAgent
+from agents.greedy_agent import GreedyOthelloPlayer
+from agents.random_agent import RandomPlayer
+from agents.base import HumanOthelloPlayer
+from othello.game import OthelloGame
+from training.evaluator import Arena
 
 
 def make_player(spec, game, simulations):
-    baselines = {"human": HumanOthelloPlayer, "random": RandomPlayer, "greedy": GreedyOthelloPlayer}
+    baselines = {
+        "human": HumanOthelloPlayer,
+        "random": RandomPlayer,
+        "greedy": GreedyOthelloPlayer,
+    }
     if spec in baselines:
         return baselines[spec](game).play
 
-    from othello.pytorch.NNet import NNetWrapper
-
-    path = Path(spec)
-    model = NNetWrapper(game)
-    model.load_checkpoint(path.parent, path.name)
-    args = SimpleNamespace(numMCTSSims=simulations, cpuct=1.0)
-
-    class ModelPlayer:
-        def startGame(self):
-            self.search = MCTS(game, model, args)
-
-        def __call__(self, board):
-            return np.argmax(self.search.getActionProb(board, temp=0))
-
-    return ModelPlayer()
+    return AlphaZeroAgent(game, Path(spec), simulations)
 
 
 def main():

@@ -8,8 +8,8 @@ from random import shuffle
 import numpy as np
 from tqdm import tqdm
 
-from Arena import Arena
-from MCTS import MCTS
+from training.evaluator import Arena
+from search.mcts import MCTS
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +17,10 @@ log = logging.getLogger(__name__)
 class Coach():
     """
     This class executes the self-play + learning. It uses the functions defined
-    in Game and NeuralNet. args are specified in main.py.
+    in the game and network interfaces. args are specified in scripts/train.py.
+
+    TODO: Keep RGSC-specific sampling and regret training outside this legacy
+    AlphaZero coach when that implementation is added.
     """
 
     def __init__(self, game, nnet, args):
@@ -155,3 +158,5 @@ class Coach():
 
             # examples based on the model were already collected (loaded)
             self.skipFirstSelfPlay = True
+
+

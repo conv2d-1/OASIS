@@ -1,15 +1,9 @@
 import numpy as np
 
 
-class RandomPlayer:
-    def __init__(self, game):
-        self.game = game
-
-    def play(self, board):
-        return np.random.choice(np.flatnonzero(self.game.getValidMoves(board, 1)))
-
-
 class HumanOthelloPlayer:
+    """Terminal human player retained from the original CLI implementation."""
+
     def __init__(self, game):
         self.game = game
 
@@ -35,14 +29,4 @@ class HumanOthelloPlayer:
             print("Illegal move.")
 
 
-class GreedyOthelloPlayer:
-    def __init__(self, game):
-        self.game = game
-
-    def play(self, board):
-        valids = self.game.getValidMoves(board, 1)
-        candidates = []
-        for action in np.flatnonzero(valids):
-            next_board, _ = self.game.getNextState(board, 1, action)
-            candidates.append((-self.game.getScore(next_board, 1), action))
-        return min(candidates)[1]
+# TODO: Introduce a shared typed Agent interface after the legacy player call sites are migrated.

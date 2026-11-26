@@ -1,14 +1,75 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from types import SimpleNamespace
 
 import numpy as np
-import torch
 import torch.optim as optim
 from tqdm import tqdm
 
-from NeuralNet import NeuralNet
-from .OthelloNNet import OthelloNNet
+
+class NeuralNet:
+    # TODO: Replace this legacy interface with a typed evaluator protocol.
+    def __init__(self, game):
+        pass
+
+    def train(self, examples):
+        pass
+
+    def predict(self, board):
+        pass
+
+    def save_checkpoint(self, folder, filename):
+        pass
+
+    def load_checkpoint(self, folder, filename):
+        pass
+
+
+class OthelloNNet(nn.Module):
+    def __init__(self, game, args):
+        self.board_x, self.board_y = game.getBoardSize()
+        self.action_size = game.getActionSize()
+        self.args = args
+
+        super(OthelloNNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, args.num_channels, 3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
+        self.conv4 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
+
+        self.bn1 = nn.BatchNorm2d(args.num_channels)
+        self.bn2 = nn.BatchNorm2d(args.num_channels)
+        self.bn3 = nn.BatchNorm2d(args.num_channels)
+        self.bn4 = nn.BatchNorm2d(args.num_channels)
+
+        self.fc1 = nn.Linear(args.num_channels*(self.board_x-4)*(self.board_y-4), 1024)
+        self.fc_bn1 = nn.BatchNorm1d(1024)
+
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc_bn2 = nn.BatchNorm1d(512)
+
+        self.fc3 = nn.Linear(512, self.action_size)
+        self.fc4 = nn.Linear(512, 1)
+
+    def forward(self, s):
+        s = s.view(-1, 1, self.board_x, self.board_y)
+        s = F.relu(self.bn1(self.conv1(s)))
+        s = F.relu(self.bn2(self.conv2(s)))
+        s = F.relu(self.bn3(self.conv3(s)))
+        s = F.relu(self.bn4(self.conv4(s)))
+        s = s.view(-1, self.args.num_channels*(self.board_x-4)*(self.board_y-4))
+
+        s = F.dropout(F.relu(self.fc_bn1(self.fc1(s))), p=self.args.dropout, training=self.training)
+        s = F.dropout(F.relu(self.fc_bn2(self.fc2(s))), p=self.args.dropout, training=self.training)
+
+        pi = self.fc3(s)
+        v = self.fc4(s)
+        return F.log_softmax(pi, dim=1), torch.tanh(v)
+
 
 args = SimpleNamespace(lr=0.001, dropout=0.3, epochs=10, batch_size=64, num_channels=512)
 
@@ -27,7 +88,6 @@ class NNetWrapper(NeuralNet):
             raise ValueError("Training requires at least one example")
         optimizer = optim.Adam(self.nnet.parameters(), lr=args.lr)
         self.nnet.train()
-        # The fully connected batch normalization layers require at least two samples.
         batch_size = max(2, min(args.batch_size, len(examples)))
         batch_count = max(1, len(examples) // batch_size)
         for epoch in range(self.epochs):

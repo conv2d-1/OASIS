@@ -1,7 +1,39 @@
 import numpy as np
 
-from Game import Game
-from .OthelloLogic import Board
+class Game:
+    # TODO: Replace this legacy AlphaZero-General interface with a typed protocol.
+    def __init__(self):
+        pass
+
+    def getInitBoard(self):
+        pass
+
+    def getBoardSize(self):
+        pass
+
+    def getActionSize(self):
+        pass
+
+    def getNextState(self, board, player, action):
+        pass
+
+    def getValidMoves(self, board, player):
+        pass
+
+    def getGameEnded(self, board, player):
+        pass
+
+    def getCanonicalForm(self, board, player):
+        pass
+
+    def getSymmetries(self, board, pi):
+        pass
+
+    def stringRepresentation(self, board):
+        pass
+from .board import Board
+from .rules import apply_action, canonical_form, game_ended, score, symmetries, valid_moves
+from .state import GameState
 
 
 class OthelloGame(Game):
@@ -17,6 +49,23 @@ class OthelloGame(Game):
 
     def __init__(self, n):
         self.n = n
+
+    def getInitialState(self) -> GameState:
+        """Return the explicit state representation used by API and replay code."""
+        return GameState(board=self.getInitBoard())
+
+    def nextState(self, state: GameState, action: int) -> GameState:
+        """Apply an action to an explicit state while preserving the legacy API."""
+        board, player = self.getNextState(state.board, state.current_player, action)
+        result = self.getGameEnded(board, player)
+        return GameState(
+            board=np.copy(board),
+            current_player=player,
+            move_number=state.move_number + 1,
+            last_action=action,
+            status="finished" if result != 0 else "ongoing",
+            result=None if result == 0 else float(result),
+        )
 
     def getInitBoard(self):
         # return initial board (numpy board)
@@ -34,59 +83,23 @@ class OthelloGame(Game):
     def getNextState(self, board, player, action):
         # if player takes action on board, return next (board,player)
         # action must be a valid move
-        if action == self.n*self.n:
-            return (board, -player)
-        b = Board(self.n)
-        b.pieces = np.copy(board)
-        move = divmod(action, self.n)
-        b.execute_move(move, player)
-        return (b.pieces, -player)
+        return apply_action(board, player, action)
 
     def getValidMoves(self, board, player):
         # return a fixed size binary vector
-        valids = [0]*self.getActionSize()
-        b = Board(self.n)
-        b.pieces = np.copy(board)
-        legalMoves =  b.get_legal_moves(player)
-        if len(legalMoves)==0:
-            valids[-1]=1
-            return np.array(valids)
-        for x, y in legalMoves:
-            valids[self.n*x+y]=1
-        return np.array(valids)
+        return valid_moves(board, player)
 
     def getGameEnded(self, board, player):
         """Return 0 for ongoing play, ±1 for a win/loss, or 1e-4 for a draw."""
-        b = Board(self.n)
-        b.pieces = np.copy(board)
-        if b.has_legal_moves(player):
-            return 0
-        if b.has_legal_moves(-player):
-            return 0
-        difference = b.countDiff(player)
-        if difference == 0:
-            return 1e-4
-        return 1 if difference > 0 else -1
+        return game_ended(board, player)
 
     def getCanonicalForm(self, board, player):
         # return state if player==1, else return -state if player==-1
-        return player*board
+        return canonical_form(board, player)
 
     def getSymmetries(self, board, pi):
         # mirror, rotational
-        assert(len(pi) == self.n**2+1)  # 1 for pass
-        pi_board = np.reshape(pi[:-1], (self.n, self.n))
-        l = []
-
-        for i in range(1, 5):
-            for j in [True, False]:
-                newB = np.rot90(board, i)
-                newPi = np.rot90(pi_board, i)
-                if j:
-                    newB = np.fliplr(newB)
-                    newPi = np.fliplr(newPi)
-                l += [(newB, list(newPi.ravel()) + [pi[-1]])]
-        return l
+        return symmetries(board, pi)
 
     def stringRepresentation(self, board):
         return board.tobytes()
@@ -96,9 +109,7 @@ class OthelloGame(Game):
         return board_s
 
     def getScore(self, board, player):
-        b = Board(self.n)
-        b.pieces = np.copy(board)
-        return b.countDiff(player)
+        return score(board, player)
 
     @staticmethod
     def display(board):
@@ -116,3 +127,4 @@ class OthelloGame(Game):
             print("|")
 
         print("-----------------------")
+
