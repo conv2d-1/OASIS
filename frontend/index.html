@@ -7,7 +7,7 @@
     <title>OASIS · Othello Arena</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="light">
     <div class="app-shell">
       <div class="setup-overlay hidden" id="setupOverlay" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
         <div class="setup-card">
@@ -27,7 +27,7 @@
               <div class="setup-config" id="whiteConfig"></div>
             </section>
           </div>
-          <div class="setup-footer"><p><span class="note-icon">i</span> MCTS 与 Alpha-Beta 使用搜索参数，AlphaZero 与 RGSC 使用 checkpoint 和 MCTS 配置。当前页面仍是本地演示模式。</p><button class="primary-button" id="confirmSetup" type="button"><span>确定配置</span><span>↗</span></button></div>
+          <div class="setup-footer"><p><span class="note-icon">i</span> MCTS 设置模拟次数，Alpha-Beta 设置搜索深度，AlphaZero 与 RGSC 设置 checkpoint 和 MCTS 模拟次数。当前页面仍是本地演示模式。</p><button class="primary-button" id="confirmSetup" type="button"><span>确定配置</span><span>↗</span></button></div>
         </div>
       </div>
       <header class="topbar">
@@ -105,7 +105,7 @@
                 <button class="secondary-button" id="pauseButton" type="button">暂停</button>
               </div>
               <div class="playback-row">
-                <label class="autoplay-toggle"><input id="autoPlayToggle" type="checkbox" checked /><span>自动播放</span><small>AI 间隔 2s</small></label>
+                <label class="autoplay-toggle"><input id="autoPlayToggle" type="checkbox" checked /><span>自动播放</span><small id="intervalValue">0s</small></label><label class="interval-slider"><span>间隔</span><input id="intervalRange" type="range" min="0" max="4" step="1" value="0" /></label>
                 <button class="step-button" id="stepButton" type="button" disabled>下一步</button>
               </div>
 
@@ -114,6 +114,11 @@
                 <p><b>接口状态</b><br />当前使用浏览器内置演示规则。FastAPI 对局服务完成后，可在此处切换真实模型。</p>
               </div>
             </aside>
+          </div>
+          <div class="result-banner hidden" id="resultBanner" aria-live="polite">
+            <div><span class="section-kicker">FINAL RESULT</span><strong id="resultWinner">对局结束</strong></div>
+            <div class="result-score" id="resultScore">黑方 0 · 白方 0</div>
+            <div class="result-meta"><span id="resultBlack">黑方 0</span><span id="resultWhite">白方 0</span><span id="resultLead">差值 0</span></div>
           </div>
         </section>
 
@@ -144,3 +149,4 @@
     <script src="app.js"></script>
   </body>
 </html>
+

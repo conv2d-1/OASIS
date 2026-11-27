@@ -6,44 +6,44 @@ OASIS 用于在黑白棋上研究强化学习、搜索算法和自博弈方法�
 
 ## 安装
 
-~~~powershell
+```powershell
 python -m pip install -r requirements.txt
-~~~
+```
 
 ## 命令行对战
 
 使用模块方式运行：
 
-~~~powershell
+```powershell
 python -m scripts.evaluate greedy random --games 2 --verbose
 python -m scripts.evaluate human greedy
-~~~
+```
 
 直接运行脚本也支持：
 
-~~~powershell
+```powershell
 python scripts/evaluate.py greedy random --games 2
-~~~
+```
 
 玩家参数支持 human、random、greedy 或 PyTorch checkpoint 路径。棋盘默认是 8×8，可以用 --board-size 6 切换到 6×6。
 
-~~~powershell
+```powershell
 python -m scripts.evaluate human results/best.pth.tar
 python -m scripts.evaluate results/checkpoint_1.pth.tar results/best.pth.tar --games 2 --verbose
-~~~
+```
 
 ## AlphaZero 自博弈训练
 
-~~~powershell
+```powershell
 python -m scripts.train --help
 python -m scripts.train --board-size 6 --iterations 1 --episodes 1 --simulations 2 --arena-games 2 --epochs 1 --checkpoint-dir results/smoke
-~~~
+```
 
 训练流程包括自博弈、对称数据增强、策略价值网络训练、新旧模型竞技和 checkpoint 保存。已有模型可以通过 --load-model 加载。
 
 ## 代码结构
 
-~~~text
+```text
 OASIS/
 ├── othello/
 │   ├── board.py
@@ -82,7 +82,7 @@ OASIS/
 ├── LICENSE
 ├── README.md
 └── requirements.txt
-~~~
+```
 
 当前已经迁移的实现包括：
 
@@ -99,3 +99,20 @@ OASIS/
 尚未实现的内容集中标记为 TODO，包括 RGSC、统一 Agent 接口、模型注册表、Web API、前端、实验配置、模型导出和自动化测试。
 
 核心实现来自 [suragnair/alpha-zero-general](https://github.com/suragnair/alpha-zero-general/tree/f1a78e0505c614205f8c60eaa82cd644a07a84b3)，沿用上游 MIT 许可证，见 LICENSE。
+
+## API 与前端联调
+
+安装依赖后启动 API：
+
+```powershell
+python -m pip install -r requirements.txt
+uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+另开终端启动前端：
+
+```powershell
+python -m http.server 4173 --bind 127.0.0.1 --directory frontend
+```
+
+访问 `http://127.0.0.1:4173/`。前端通过 API 选择真人、MCTS、Alpha-Beta、随机、贪心、AlphaZero 和 RGSC。AlphaZero 需要可发现的 checkpoint，RGSC 当前会返回未实现状态。

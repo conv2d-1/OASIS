@@ -1,15 +1,19 @@
 const SIZE = 8;
 const PASS = SIZE * SIZE;
+const API_BASE = window.OASIS_API_BASE || "http://127.0.0.1:8000";
 
 const state = {
   board: createInitialBoard(),
   currentPlayer: 1,
   mode: "human",
   gameStarted: false,
+  apiGameId: null,
   paused: false,
   autoPlay: true,
+  playbackInterval: 0,
   aiTimer: null,
   gameOver: false,
+  endedManually: false,
   lastAction: null,
   simulations: 50,
   players: {
@@ -24,6 +28,91 @@ const eventListEl = document.querySelector("#eventList");
 const setupOverlay = document.querySelector("#setupOverlay");
 let squareElements = [];
 let renderedBoard = null;
+
+async function apiRequest(path, options) {
+  const response = await fetch(API_BASE + path, Object.assign({ headers: { "Content-Type": "application/json" } }, options || {}));
+  const payload = await response.json().catch(function () { return {}; });
+  if (!response.ok) throw new Error(payload.detail || "API request failed");
+  return payload;
+}
+
+function apiPlayerConfig(config) {
+  const payload = { type: config.type };
+  if (config.type === "mcts") payload.simulations = Number(config.simulations || 50);
+  if (config.type === "alphabeta") payload.depth = Number(config.depth || 4);
+  if (["alphazero", "rgsc"].includes(config.type)) {
+    payload.simulations = Number(config.simulations || 50);
+    payload.checkpoint = config.checkpoint || null;
+  }
+  return payload;
+}
+
+function applyRemoteState(payload) {
+  state.board = payload.board;
+  state.currentPlayer = payload.current_player;
+  state.lastAction = payload.last_action;
+  state.gameOver = payload.status === "finished";
+  state.gameStarted = !state.gameOver;
+}
+
+async function startRemoteGame() {
+  clearAiTimer();
+  try {
+    const payload = await apiRequest("/api/games", {
+      method: "POST",
+      body: JSON.stringify({ board_size: SIZE, black: apiPlayerConfig(state.players.black), white: apiPlayerConfig(state.players.white) }),
+    });
+    state.apiGameId = payload.id;
+    state.paused = false;
+    state.endedManually = false;
+    state.events = [];
+    applyRemoteState(payload);
+    addEvent("API 对局已创建", "API");
+    render();
+    if (!isHumanTurn() && state.autoPlay) scheduleAiTurn();
+  } catch (error) {
+    state.apiGameId = null;
+    state.gameStarted = false;
+    addEvent("API 未连接 · " + error.message, "ERROR");
+    render();
+  }
+}
+
+async function remoteMove(action) {
+  try {
+    const payload = await apiRequest("/api/games/" + state.apiGameId + "/moves", { method: "POST", body: JSON.stringify({ action: action }) });
+    applyRemoteState(payload);
+    addEvent("真人落子 " + actionName(action), "HUMAN");
+    render();
+    if (!state.gameOver && !isHumanTurn() && state.autoPlay) scheduleAiTurn();
+  } catch (error) {
+    addEvent("落子失败 · " + error.message, "ERROR");
+    renderEvents();
+  }
+}
+
+async function remoteStep() {
+  if (!state.apiGameId) return;
+  const startedAt = performance.now();
+  try {
+    const payload = await apiRequest("/api/games/" + state.apiGameId + "/step", { method: "POST" });
+    const roundTripMs = performance.now() - startedAt;
+    const move = payload.moves && payload.moves.length ? payload.moves[payload.moves.length - 1] : null;
+    const inferenceMs = move && typeof move.inference_ms === "number" ? move.inference_ms : roundTripMs;
+    const commit = function () {
+      applyRemoteState(payload);
+      addEvent(move ? "Agent 落子 " + actionName(move.action) + " · 推理 " + (inferenceMs / 1000).toFixed(2) + "s" : "Agent 已行动 · 推理 " + (inferenceMs / 1000).toFixed(2) + "s", "AGENT");
+      render();
+      if (!state.gameOver && !isHumanTurn() && state.autoPlay) scheduleAiTurn();
+    };
+    const delay = state.autoPlay ? Math.max(0, state.playbackInterval * 1000 - inferenceMs) : 0;
+    clearAiTimer();
+    state.aiTimer = window.setTimeout(function () { state.aiTimer = null; commit(); }, delay);
+  } catch (error) {
+    addEvent("Agent 执行失败 · " + error.message, "ERROR");
+    renderEvents();
+  }
+}
 
 function createInitialBoard() {
   const board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
@@ -121,7 +210,8 @@ function modelName(side) {
 
 function modelSummary(config) {
   const label = MODEL_LABELS[config.type];
-  if (config.type === "mcts" || config.type === "alphabeta") return label + " · " + config.simulations + " sims / depth " + config.depth;
+  if (config.type === "mcts") return label + " · " + config.simulations + " sims";
+  if (config.type === "alphabeta") return label + " · depth " + config.depth;
   if (config.type === "alphazero" || config.type === "rgsc") return label + " · " + config.checkpoint + " / " + config.simulations + " sims";
   return label;
 }
@@ -162,8 +252,11 @@ function configMarkup(side) {
   if (["human", "random", "greedy"].includes(config.type)) {
     return '<div class="setup-config-empty">' + (config.type === "human" ? "由真人点击棋盘落子。" : "无需训练参数，直接使用本地规则。") + '</div>';
   }
-  if (config.type === "mcts" || config.type === "alphabeta") {
-    return '<div class="setup-param-grid"><div class="setup-param"><label>模拟次数<input type="number" min="10" max="500" step="10" data-config-key="simulations" value="' + config.simulations + '"></label></div><div class="setup-param"><label>搜索深度<input type="number" min="1" max="16" step="1" data-config-key="depth" value="' + config.depth + '"></label></div></div>';
+  if (config.type === "mcts") {
+    return '<div class="setup-param-grid single-param"><div class="setup-param"><label>模拟次数<input type="number" min="10" max="500" step="10" data-config-key="simulations" value="' + config.simulations + '"></label></div></div>';
+  }
+  if (config.type === "alphabeta") {
+    return '<div class="setup-param-grid single-param"><div class="setup-param"><label>搜索深度<input type="number" min="1" max="16" step="1" data-config-key="depth" value="' + config.depth + '"></label></div></div>';
   }
   return '<div class="setup-param-grid"><div class="setup-param"><label>Checkpoint<select data-config-key="checkpoint"><option>best.pth.tar</option><option>checkpoint_10.pth.tar</option><option>checkpoint_20.pth.tar</option></select></label></div><div class="setup-param"><label>MCTS 模拟<input type="number" min="10" max="500" step="10" data-config-key="simulations" value="' + config.simulations + '"></label></div></div>';
 }
@@ -191,6 +284,13 @@ function renderSetup() {
 
 function openSetup() {
   renderSetup();
+apiRequest("/api/agents").then(function (payload) {
+  payload.agents.forEach(function (agent) {
+    document.querySelectorAll("#blackModelSetup option, #whiteModelSetup option").forEach(function (option) {
+      if (option.value === agent.type && !agent.available) option.textContent = option.textContent + " · unavailable";
+    });
+  });
+}).catch(function () { /* API status is shown when starting a game. */ });
   setupOverlay.classList.remove("hidden");
 }
 
@@ -281,6 +381,8 @@ function renderStats() {
   document.querySelector("#whitePlayerChip").classList.toggle("active-player", state.gameStarted && !state.gameOver && state.currentPlayer === -1);
   document.querySelector("#startButton span").textContent = state.gameStarted && !state.gameOver ? "结束对局" : "开始对局";
   document.querySelector("#autoPlayToggle").checked = state.autoPlay;
+  document.querySelector("#intervalRange").value = String(Math.round(state.playbackInterval / 0.5));
+  document.querySelector("#intervalValue").textContent = formatInterval(state.playbackInterval);
   document.querySelector("#stepButton").disabled = !state.gameStarted || state.gameOver || state.autoPlay || state.paused || isHumanTurn();
 }
 
@@ -295,6 +397,30 @@ function renderMode() {
   }
 }
 
+function renderResult() {
+  const banner = document.querySelector("#resultBanner");
+  if (!state.gameOver) {
+    banner.classList.add("hidden");
+    return;
+  }
+  const counts = countPieces(state.board);
+  let winner;
+  if (state.endedManually) {
+    winner = "对局中止";
+  } else if (counts.black === counts.white) {
+    winner = "和棋";
+  } else {
+    const side = counts.black > counts.white ? 1 : -1;
+    winner = (side === 1 ? "黑方" : "白方") + "获胜 · " + modelName(side);
+  }
+  document.querySelector("#resultWinner").textContent = winner;
+  document.querySelector("#resultScore").textContent = "黑方 " + counts.black + " · 白方 " + counts.white;
+  document.querySelector("#resultBlack").textContent = "黑方 " + counts.black;
+  document.querySelector("#resultWhite").textContent = "白方 " + counts.white;
+  document.querySelector("#resultLead").textContent = "差值 " + Math.abs(counts.black - counts.white);
+  banner.classList.remove("hidden");
+}
+
 function renderEvents() {
   eventListEl.innerHTML = state.events.length ? state.events.map(function (event) {
     return "<div class=\"event\"><time>" + event.time + "</time><span><b>" + event.text + "</b></span><span class=\"event-tag\">" + event.tag + "</span></div>";
@@ -305,6 +431,7 @@ function render() {
   renderBoard();
   renderStats();
   renderMode();
+  renderResult();
   renderEvents();
   const pauseButton = document.querySelector("#pauseButton");
   pauseButton.textContent = state.paused ? "继续" : "暂停";
@@ -323,6 +450,10 @@ function addEvent(text, tag) {
   state.events = state.events.slice(0, 8);
 }
 
+function formatInterval(seconds) {
+  return seconds === 0 ? "0s" : (seconds % 1 === 0 ? String(seconds) : seconds.toFixed(1)) + "s";
+}
+
 function clearAiTimer() {
   if (state.aiTimer !== null) {
     window.clearTimeout(state.aiTimer);
@@ -333,23 +464,21 @@ function clearAiTimer() {
 function scheduleAiTurn() {
   clearAiTimer();
   if (!state.autoPlay || !state.gameStarted || state.gameOver || state.paused || isHumanTurn()) return;
-  state.aiTimer = window.setTimeout(function () {
-    state.aiTimer = null;
-    runAiTurn();
-  }, 2000);
+  runAiTurn();
 }
 
 function finishIfNeeded() {
   if (!isFinished(state.board)) return false;
   const counts = countPieces(state.board);
   state.gameOver = true;
+  state.endedManually = false;
   clearAiTimer();
   const winner = counts.black === counts.white ? "和棋" : counts.black > counts.white ? "黑方获胜" : "白方获胜";
   addEvent(winner + " · " + counts.black + " : " + counts.white, "FINAL");
   return true;
 }
 
-function playAction(action, source) {
+function playAction(action, source, inferenceMs) {
   if (!state.gameStarted) return;
   const legal = legalActions(state.board, state.currentPlayer);
   if (!legal.includes(action)) return;
@@ -360,7 +489,8 @@ function playAction(action, source) {
     const applied = applyAction(state.board, player, action);
     state.board = applied.board;
     state.lastAction = action;
-    addEvent((player === 1 ? "黑方" : "白方") + " 落子 " + actionName(action) + " · " + source, source === "你" ? "HUMAN" : "AI");
+    const inferenceLabel = source === "你" ? "" : " · 推理 " + (inferenceMs / 1000).toFixed(2) + "s";
+    addEvent((player === 1 ? "黑方" : "白方") + " 落子 " + actionName(action) + " · " + source + inferenceLabel, source === "你" ? "HUMAN" : "AI");
   }
   state.currentPlayer = -player;
   if (finishIfNeeded()) render();
@@ -370,19 +500,37 @@ function playAction(action, source) {
 
 function handleHumanMove(action) {
   if (!isHumanTurn() || state.paused) return;
+  if (state.apiGameId) { remoteMove(action); return; }
   playAction(action, "你");
 }
 
 function runAiTurn() {
   if (!state.gameStarted || state.gameOver || state.paused || isHumanTurn()) return;
+  if (state.apiGameId) { remoteStep(); return; }
+  const startedAt = performance.now();
   const action = chooseAiAction(state.currentPlayer);
-  playAction(action, modelName(state.currentPlayer));
+  const inferenceMs = performance.now() - startedAt;
+  const delay = state.autoPlay ? Math.max(0, state.playbackInterval * 1000 - inferenceMs) : 0;
+  clearAiTimer();
+  state.aiTimer = window.setTimeout(function () {
+    state.aiTimer = null;
+    playAction(action, modelName(state.currentPlayer), inferenceMs);
+  }, delay);
 }
 
-function endGame() {
+async function endGame() {
   clearAiTimer();
+  if (state.apiGameId) {
+    try {
+      const payload = await apiRequest("/api/games/" + state.apiGameId + "/end", { method: "POST" });
+      applyRemoteState(payload);
+    } catch (error) {
+      addEvent("结束对局失败 · " + error.message, "ERROR");
+    }
+  }
   state.gameStarted = false;
   state.gameOver = true;
+  state.endedManually = true;
   state.paused = true;
   addEvent("对局已结束", "END");
   render();
@@ -395,6 +543,7 @@ function resetGame() {
   state.board = createInitialBoard();
   state.currentPlayer = 1;
   state.gameOver = false;
+  state.endedManually = false;
   state.lastAction = null;
   state.paused = false;
   state.events = [];
@@ -419,9 +568,10 @@ document.querySelector("#blackModelSetup").addEventListener("change", function (
 document.querySelector("#whiteModelSetup").addEventListener("change", function (event) { state.players.white.type = event.target.value; renderSetupConfig("white"); });
 document.querySelector("#confirmSetup").addEventListener("click", function () { closeSetup(); addEvent("对局配置已保存", "SETUP"); render(); });
 document.querySelector("#openSetupButton").addEventListener("click", openSetup);
-document.querySelector("#startButton").addEventListener("click", function () { if (state.gameStarted && !state.gameOver) endGame(); else resetGame(); });
+document.querySelector("#startButton").addEventListener("click", function () { if (state.gameStarted && !state.gameOver) endGame(); else startRemoteGame(); });
 document.querySelector("#pauseButton").addEventListener("click", function () { if (!state.gameStarted || state.gameOver) return; state.paused = !state.paused; if (state.paused) clearAiTimer(); render(); if (!state.paused && !isHumanTurn() && state.autoPlay) scheduleAiTurn(); });
 document.querySelector("#autoPlayToggle").addEventListener("change", function (event) { state.autoPlay = event.target.checked; clearAiTimer(); render(); if (state.autoPlay && !isHumanTurn()) scheduleAiTurn(); });
+document.querySelector("#intervalRange").addEventListener("input", function (event) { state.playbackInterval = Number(event.target.value) * 0.5; render(); if (state.autoPlay && !isHumanTurn()) scheduleAiTurn(); });
 document.querySelector("#stepButton").addEventListener("click", function () { if (state.autoPlay || state.paused || state.gameOver || !state.gameStarted || isHumanTurn()) return; runAiTurn(); });
 document.querySelector("#clearLog").addEventListener("click", function () { state.events = []; renderEvents(); });
 document.querySelector("#themeButton").addEventListener("click", function () { document.body.classList.toggle("light"); });

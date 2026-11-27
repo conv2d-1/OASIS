@@ -1,1 +1,1 @@
-# TODO: Implement model listing and inference service for the web API.
+"""Model listing and inference are currently handled by api.main and agents.factory."""
